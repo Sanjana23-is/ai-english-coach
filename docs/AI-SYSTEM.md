@@ -70,11 +70,19 @@ To maintain zero API cost and guarantee total user privacy, the architecture use
 
 ### 3.1 Large Language Models (LLM) via Ollama
 
-- **Runtime**: [Ollama](https://ollama.ai/) serving quantized GGUF weights.
-- **Candidate Models**:
-  - **Llama 3 (8B Instruct)**: Primary candidate for nuanced conversational dialogue and rich grammatical coaching.
-  - **Mistral (7B Instruct v0.3)**: High performance on dialogue flow and concise reasoning.
-  - **Phi-3 / Qwen 2.5 (3B–7B)**: Ultra-fast fallback models for resource-constrained client machines.
+- **Runtime**: [Ollama](https://ollama.ai/) serving local quantized models via its native HTTP API (`/api/chat`).
+- **Provider Abstraction**: Implemented via `ConversationAIProvider` interface with a pluggable provider factory (`createConversationAIProvider`).
+  - **`OllamaConversationProvider`**: Connects to local Ollama instance with timeout enforcement, clean error mapping, and level/mode-specific Friend persona system prompt injection.
+  - **`MockConversationAIProvider`**: Deterministic, zero-dependency offline mock for automated CI testing and local environments without Ollama.
+- **Configuration Parameters**:
+  - `CONVERSATION_AI_PROVIDER`: `ollama` or `mock`
+  - `OLLAMA_BASE_URL`: Base HTTP URL (default: `http://localhost:11434`)
+  - `OLLAMA_MODEL`: Target model (default: `llama3.2:1b`, configurable)
+  - `OLLAMA_TIMEOUT_MS`: Inference timeout in ms (default: `30000`)
+- **Recommended Local Models**:
+  - **Llama 3.2 (1B / 3B Instruct)**: Lightweight conversational instruct models with fast token generation on Apple Silicon / consumer CPUs.
+  - **Qwen 2.5 (1.5B / 3B / 7B)**: Strong multilingual conversational reasoning.
+  - **Llama 3 (8B Instruct)**: High-precision grammatical analysis for the Coach persona.
 
 ### 3.2 Speech-to-Text (STT) via Whisper
 

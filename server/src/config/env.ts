@@ -24,6 +24,14 @@ export const config = {
     database: process.env.POSTGRES_DB || 'englishcoach_db',
     maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '10', 10),
   },
+  ai: {
+    provider: (process.env.CONVERSATION_AI_PROVIDER || 'mock') as 'mock' | 'ollama',
+    ollama: {
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+      model: process.env.OLLAMA_MODEL || 'llama3.2:1b',
+      timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS || '30000', 10),
+    },
+  },
   devUser: {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Sanjana',

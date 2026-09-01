@@ -9,7 +9,7 @@ import type {
   ConversationTurnResponse,
 } from '../types/session.types.js';
 import type { ConversationAIProvider } from '../ai/conversation-provider.interface.js';
-import { MockConversationAIProvider } from '../ai/mock-conversation.provider.js';
+import { createConversationAIProvider } from '../ai/provider-factory.js';
 
 export class ServiceError extends Error {
   constructor(
@@ -48,7 +48,7 @@ interface DbUtteranceRow {
 }
 
 export class ConversationService {
-  constructor(private aiProvider: ConversationAIProvider = new MockConversationAIProvider()) {}
+  constructor(private aiProvider: ConversationAIProvider = createConversationAIProvider()) {}
 
   /**
    * Helper to map DB row to ConversationSession object
