@@ -1,42 +1,56 @@
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { config } from './config/env.js';
+import { checkDatabaseConnection, closeDatabasePool } from './db/pool.js';
+import { createSessionRouter } from './routes/session.routes.js';
+import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // Middleware
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: config.clientUrl,
     credentials: true,
   }),
 );
 app.use(express.json());
 
-// Health Check Endpoint
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
+// Health Check Endpoint (Includes database connectivity status)
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const dbHealth = await checkDatabaseConnection();
+
+  const isHealthy = dbHealth.connected;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'ok' : 'degraded',
     service: 'ai-english-coach-server',
     timestamp: new Date().toISOString(),
-    phase: 'foundation',
+    phase: 'core-conversation-backend',
+    database: {
+      status: dbHealth.connected ? 'connected' : 'disconnected',
+      latencyMs: dbHealth.latencyMs,
+      ...(dbHealth.error ? { error: dbHealth.error } : {}),
+    },
   });
 });
 
+// Conversation Sessions API
+app.use('/api/sessions', createSessionRouter());
+
+// Centralized Error Handling Middleware
+app.use(errorHandler);
+
 // Start Server
-const server = app.listen(PORT, () => {
-  console.log(`[server]: AI English Coach backend running on port ${PORT}`);
+const server = app.listen(config.port, () => {
+  console.log(`[server]: AI English Coach backend running on port ${config.port}`);
 });
 
 // Graceful Shutdown
-const handleShutdown = (signal: string) => {
+const handleShutdown = async (signal: string) => {
   console.log(`[server]: Received ${signal}. Shutting down gracefully...`);
-  server.close(() => {
-    console.log('[server]: Closed out remaining connections.');
+  server.close(async () => {
+    console.log('[server]: Closed remaining HTTP connections.');
+    await closeDatabasePool();
     process.exit(0);
   });
 };

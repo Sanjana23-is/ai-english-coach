@@ -15,7 +15,9 @@
     "typecheck": "npm run typecheck --workspaces",
     "lint": "npm run lint --workspaces",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\"",
+    "test": "npm run test --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

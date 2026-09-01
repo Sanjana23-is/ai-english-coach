@@ -4,9 +4,10 @@
 
 The persistence layer for AI English Coach is powered by **PostgreSQL 16**.
 
-- **Execution**: Local containerized instance via `docker-compose.yml`.
+- **Execution**: Local containerized instance via `docker-compose.yml` (default host port: `5434` to prevent local macOS postgres collision).
+- **Connection**: Connection pooling via `pg.Pool` configured through `DATABASE_URL` or `POSTGRES_*` environment variables.
+- **Migrations**: Explicit, idempotent, version-tracked SQL migrations in `server/src/db/migrations/` managed by `server/src/db/migrate.ts` (`schema_migrations` table).
 - **Role**: High-integrity relational storage for user profiles, conversation transcripts, speech telemetry, coaching reviews, pattern states, and daily challenges.
-- **ORM / Query Builder**: Planned adoption of a type-safe TypeScript database toolkit (e.g., Prisma or Kysely) in Phase 2.
 
 ---
 
