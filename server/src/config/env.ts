@@ -11,12 +11,13 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   database: {
     url:
-      process.env.DATABASE_URL ||
-      `postgresql://${process.env.POSTGRES_USER || 'englishcoach'}:${
-        process.env.POSTGRES_PASSWORD || 'englishcoach_dev_password'
-      }@${process.env.POSTGRES_HOST || 'localhost'}:${
-        process.env.POSTGRES_PORT || '5434'
-      }/${process.env.POSTGRES_DB || 'englishcoach_db'}`,
+      process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('${')
+        ? process.env.DATABASE_URL
+        : `postgresql://${process.env.POSTGRES_USER || 'englishcoach'}:${
+            process.env.POSTGRES_PASSWORD || 'englishcoach_dev_password'
+          }@${process.env.POSTGRES_HOST || 'localhost'}:${
+            process.env.POSTGRES_PORT || '5434'
+          }/${process.env.POSTGRES_DB || 'englishcoach_db'}`,
     user: process.env.POSTGRES_USER || 'englishcoach',
     password: process.env.POSTGRES_PASSWORD || 'englishcoach_dev_password',
     host: process.env.POSTGRES_HOST || 'localhost',

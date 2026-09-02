@@ -1,13 +1,17 @@
 import type { Request, Response, NextFunction } from 'express';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(id: string): boolean {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+}
 
 const ALLOWED_SPEAKERS = ['user', 'ai'];
 const MAX_TEXT_LENGTH = 2000;
 
 export function validateSessionId(req: Request, res: Response, next: NextFunction): void {
   const { sessionId } = req.params;
-  if (!sessionId || !UUID_REGEX.test(sessionId)) {
+  if (!sessionId || !isValidUuid(sessionId)) {
     res.status(400).json({
       error: {
         code: 'INVALID_ID_FORMAT',
@@ -22,7 +26,7 @@ export function validateSessionId(req: Request, res: Response, next: NextFunctio
 export function validateCreateSession(req: Request, res: Response, next: NextFunction): void {
   const { mode, learnerLevel, userId } = req.body || {};
 
-  if (userId && !UUID_REGEX.test(userId)) {
+  if (userId && !isValidUuid(userId)) {
     res.status(400).json({
       error: {
         code: 'INVALID_ID_FORMAT',

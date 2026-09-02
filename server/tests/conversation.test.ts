@@ -4,6 +4,12 @@ import { pool } from '../src/db/pool.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { ConversationService, ServiceError } from '../src/services/conversation.service.js';
 import { MockConversationAIProvider } from '../src/ai/mock-conversation.provider.js';
+import {
+  isValidUuid,
+  validateSessionId,
+  validateCreateSession,
+} from '../src/middleware/validation.js';
+import type { Request, Response } from 'express';
 
 describe('Conversation Backend Lifecycle', () => {
   const service = new ConversationService(new MockConversationAIProvider());
@@ -150,5 +156,140 @@ describe('Conversation Backend Lifecycle', () => {
         return true;
       },
     );
+  });
+
+  it('10. should accept the seeded development user UUID when creating a session', async () => {
+    const devUserId = '00000000-0000-0000-0000-000000000001';
+    const session = await service.createSession({
+      userId: devUserId,
+      mode: 'casual',
+      learnerLevel: 'Intermediate',
+    });
+
+    assert.ok(session.id);
+    assert.equal(session.userId, devUserId);
+    assert.equal(session.mode, 'casual');
+
+    // Clean up created session
+    await pool.query('DELETE FROM conversation_sessions WHERE id = $1;', [session.id]);
+  });
+});
+
+describe('UUID and API Input Validation', () => {
+  const devUserId = '00000000-0000-0000-0000-000000000001';
+  const standardUuid = 'e46e87ff-1dd0-44f0-a6ed-bb70ffb06b00';
+  const nilUuid = '00000000-0000-0000-0000-000000000000';
+
+  it('1. should accept canonical UUID formats (including seeded dev user and nil UUID)', () => {
+    assert.equal(isValidUuid(devUserId), true);
+    assert.equal(isValidUuid(standardUuid), true);
+    assert.equal(isValidUuid(nilUuid), true);
+    assert.equal(isValidUuid('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'), true);
+  });
+
+  it('2. should reject malformed or non-UUID strings', () => {
+    assert.equal(isValidUuid('not-a-uuid'), false);
+    assert.equal(isValidUuid(''), false);
+    assert.equal(isValidUuid('00000000-0000-0000-0000-00000000001'), false); // 11 hex chars at end
+    assert.equal(isValidUuid('00000000-0000-0000-0000-0000000000001'), false); // 13 hex chars at end
+    assert.equal(isValidUuid('00000000000000000000000000000001'), false); // Missing hyphens
+    assert.equal(isValidUuid('00000000-0000-0000-0000-00000000000g'), false); // Non-hex 'g'
+    assert.equal(isValidUuid(`${devUserId}; DROP TABLE users;`), false);
+  });
+
+  interface MockErrorResponse {
+    error?: {
+      code: string;
+      message: string;
+    };
+  }
+
+  function createMockResponse() {
+    let statusCode = 200;
+    let body: MockErrorResponse | null = null;
+
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(data: MockErrorResponse) {
+        body = data;
+        return this;
+      },
+    } as unknown as Response;
+
+    return {
+      res,
+      getStatusCode: () => statusCode,
+      getBody: () => body,
+    };
+  }
+
+  it('3. validateCreateSession should accept the seeded development user UUID', () => {
+    let nextCalled = false;
+    const { res, getStatusCode, getBody } = createMockResponse();
+
+    const req = {
+      body: {
+        userId: devUserId,
+        mode: 'casual',
+        learnerLevel: 'Intermediate',
+      },
+    } as unknown as Request;
+
+    validateCreateSession(req, res, () => {
+      nextCalled = true;
+    });
+    assert.equal(nextCalled, true, 'next() must be called when userId is valid');
+    assert.equal(getStatusCode(), 200);
+    assert.equal(getBody(), null);
+  });
+
+  it('4. validateCreateSession should reject malformed userId with INVALID_ID_FORMAT', () => {
+    let nextCalled = false;
+    const { res, getStatusCode, getBody } = createMockResponse();
+
+    const req = {
+      body: {
+        userId: 'not-a-valid-uuid',
+      },
+    } as unknown as Request;
+
+    validateCreateSession(req, res, () => {
+      nextCalled = true;
+    });
+    assert.equal(nextCalled, false, 'next() must not be called when userId is invalid');
+    assert.equal(getStatusCode(), 400);
+    assert.equal(getBody()?.error?.code, 'INVALID_ID_FORMAT');
+    assert.equal(getBody()?.error?.message, 'userId must be a valid UUID format');
+  });
+
+  it('5. validateSessionId should accept valid session UUIDs and reject malformed ones', () => {
+    let nextCalled = false;
+    const mock1 = createMockResponse();
+
+    const validReq = {
+      params: { sessionId: standardUuid },
+    } as unknown as Request;
+
+    validateSessionId(validReq, mock1.res, () => {
+      nextCalled = true;
+    });
+    assert.equal(nextCalled, true, 'next() must be called for valid session UUID');
+
+    // Test malformed session ID
+    nextCalled = false;
+    const mock2 = createMockResponse();
+    const invalidReq = {
+      params: { sessionId: 'invalid-session-id' },
+    } as unknown as Request;
+
+    validateSessionId(invalidReq, mock2.res, () => {
+      nextCalled = true;
+    });
+    assert.equal(nextCalled, false, 'next() must not be called for invalid session UUID');
+    assert.equal(mock2.getStatusCode(), 400);
+    assert.equal(mock2.getBody()?.error?.code, 'INVALID_ID_FORMAT');
   });
 });
