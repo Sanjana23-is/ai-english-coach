@@ -86,10 +86,31 @@ To maintain zero API cost and guarantee total user privacy, the architecture use
 
 ### 3.2 Speech-to-Text (STT) via Whisper
 
-- **Runtime**: Local [Whisper](https://github.com/openai/whisper) (or `whisper.cpp` optimized for CPU/Metal).
-- **Models**:
-  - `whisper-base.en` / `whisper-small.en`: High accuracy, sub-second transcription latency for English speech on consumer hardware.
-- **Telemetry Extraction**: In addition to text transcripts, timestamped tokens allow extraction of pause lengths and silence durations.
+- **Runtime**: Local [Whisper](https://github.com/openai/whisper) server or [whisper.cpp](https://github.com/ggerganov/whisper.cpp) server serving quantized models via HTTP.
+- **Provider Abstraction**: Implemented via `SpeechToTextProvider` interface with a provider factory (`createSpeechToTextProvider`).
+  - **`WhisperHttpSTTProvider`**: Connects to local Whisper HTTP instance (`POST /v1/audio/transcriptions` or `/inference`) with timeout enforcement, clean error mapping, and raw buffer audio transport.
+  - **`MockSpeechToTextProvider`**: Deterministic offline mock for automated CI testing and local environments without Whisper running.
+- **API Endpoint**: `POST /api/stt/transcribe` accepting raw audio buffers (`audio/webm`, `audio/mp4`, `audio/wav`).
+- **Configuration Parameters**:
+  - `STT_PROVIDER`: `whisper` or `mock`
+  - `WHISPER_BASE_URL`: Base HTTP URL (default: `http://localhost:8000`)
+  - `WHISPER_MODEL`: Target model (default: `base.en`, configurable)
+  - `WHISPER_TIMEOUT_MS`: Inference timeout in ms (default: `30000`)
+- **Recommended Local Whisper Setup (When User is Ready)**:
+  - **Option A (whisper.cpp server - Apple Silicon / Metal accelerated)**:
+    ```bash
+    # Install whisper-cpp via Homebrew
+    brew install whisper-cpp
+
+    # Run the whisper.cpp HTTP server on port 8000 with base.en model
+    whisper-cpp-server --model ~/.whisper/ggml-base.en.bin --port 8000
+    ```
+  - **Option B (faster-whisper-server via Python / pip)**:
+    ```bash
+    pip install faster-whisper-server
+    faster-whisper-server --port 8000 --model base.en
+    ```
+- **Privacy & Storage**: Audio recorded via the browser `MediaRecorder` is processed entirely on the local machine. No raw audio files are stored permanently in PostgreSQL or written to cloud disks.
 
 ### 3.3 Text-to-Speech (TTS) via Piper
 

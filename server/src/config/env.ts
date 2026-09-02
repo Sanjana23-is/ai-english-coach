@@ -33,6 +33,14 @@ export const config = {
       timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS || '30000', 10),
     },
   },
+  stt: {
+    provider: (process.env.STT_PROVIDER || 'whisper') as 'whisper' | 'mock',
+    whisper: {
+      baseUrl: process.env.WHISPER_BASE_URL || 'http://localhost:8000',
+      model: process.env.WHISPER_MODEL || 'base.en',
+      timeoutMs: parseInt(process.env.WHISPER_TIMEOUT_MS || '30000', 10),
+    },
+  },
   devUser: {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Sanjana',

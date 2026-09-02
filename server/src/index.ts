@@ -3,8 +3,10 @@ import cors from 'cors';
 import { config } from './config/env.js';
 import { checkDatabaseConnection, closeDatabasePool } from './db/pool.js';
 import { createSessionRouter } from './routes/session.routes.js';
+import { createSttRouter } from './routes/stt.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { OllamaConversationProvider } from './ai/ollama-conversation.provider.js';
+import { createSpeechToTextProvider } from './stt/stt-factory.js';
 
 const app = express();
 
@@ -17,7 +19,7 @@ app.use(
 );
 app.use(express.json());
 
-// Health Check Endpoint (Includes DB and AI Provider connectivity status)
+// Health Check Endpoint (Includes DB, AI Provider, and STT status)
 app.get('/api/health', async (_req: Request, res: Response) => {
   const dbHealth = await checkDatabaseConnection();
 
@@ -46,23 +48,37 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     };
   }
 
+  // Speech-to-Text provider health
+  const sttProvider = createSpeechToTextProvider();
+  const sttStatus = await sttProvider.checkHealth();
+  const sttHealth = {
+    provider: sttProvider.providerName,
+    model: sttStatus.model || config.stt.whisper.model,
+    status: sttStatus.available ? 'connected' : 'unavailable',
+    ...(sttStatus.error ? { error: sttStatus.error } : {}),
+  };
+
   const isHealthy = dbHealth.connected;
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'ok' : 'degraded',
     service: 'ai-english-coach-server',
     timestamp: new Date().toISOString(),
-    phase: 'ollama-conversation-ai',
+    phase: 'whisper-stt-integration',
     database: {
       status: dbHealth.connected ? 'connected' : 'disconnected',
       latencyMs: dbHealth.latencyMs,
       ...(dbHealth.error ? { error: dbHealth.error } : {}),
     },
     ai: aiHealth,
+    stt: sttHealth,
   });
 });
 
 // Conversation Sessions API
 app.use('/api/sessions', createSessionRouter());
+
+// Speech-to-Text (STT) API
+app.use('/api/stt', createSttRouter());
 
 // Centralized Error Handling Middleware
 app.use(errorHandler);
@@ -71,6 +87,7 @@ app.use(errorHandler);
 const server = app.listen(config.port, () => {
   console.log(`[server]: AI English Coach backend running on port ${config.port}`);
   console.log(`[server]: Configured AI provider: '${config.ai.provider}'`);
+  console.log(`[server]: Configured STT provider: '${config.stt.provider}'`);
 });
 
 // Graceful Shutdown

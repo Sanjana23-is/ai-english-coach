@@ -131,7 +131,9 @@ export function PracticePage() {
           <Button
             size="lg"
             variant="primary"
-            onClick={() => navigate(`/conversation/new?mode=${unstructuredMode.id}`)}
+            onClick={() =>
+              navigate(`/conversation/new?mode=${unstructuredMode.id}&level=${selectedLevel}`)
+            }
             className="bg-amber-400 hover:bg-amber-300 text-zinc-950 font-semibold px-8 py-3.5 whitespace-nowrap rounded-2xl"
           >
             Start Open Chat
@@ -162,7 +164,7 @@ export function PracticePage() {
         {filteredModes.map((mode) => (
           <div
             key={mode.id}
-            onClick={() => navigate(`/conversation/new?mode=${mode.id}`)}
+            onClick={() => navigate(`/conversation/new?mode=${mode.id}&level=${selectedLevel}`)}
             className="p-6 rounded-3xl bg-[#141416]/60 border border-zinc-800/60 hover:border-zinc-700 hover:bg-[#18181b]/60 transition-all cursor-pointer flex flex-col justify-between space-y-4"
           >
             <div className="space-y-3">
