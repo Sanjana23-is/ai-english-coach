@@ -3,7 +3,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Mic,
   Volume2,
-  VolumeX,
   MessageSquare,
   Sparkles,
   ChevronDown,
@@ -15,6 +14,7 @@ import {
   AlertCircle,
   Square,
   CheckCircle2,
+  Play,
 } from 'lucide-react';
 import { Waveform } from '../components/common/Waveform';
 import { formatSecondsToTime } from '../lib/formatters';
@@ -30,6 +30,8 @@ type ConversationFlowState =
   | 'transcript_ready'
   | 'ai_thinking'
   | 'ai_speaking';
+
+type AudioPlaybackState = 'idle' | 'loading_audio' | 'playing' | 'paused' | 'error';
 
 export function ConversationPage() {
   const navigate = useNavigate();
@@ -50,7 +52,6 @@ export function ConversationPage() {
   // Turn orchestration & conversation states
   const [flowState, setFlowState] = useState<ConversationFlowState>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [showTextFallback, setShowTextFallback] = useState<boolean>(true);
   const [textInput, setTextInput] = useState<string>('');
@@ -59,7 +60,13 @@ export function ConversationPage() {
   const [lastFailedText, setLastFailedText] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Recording audio state
+  // Audio Playback (TTS) state
+  const [audioPlaybackState, setAudioPlaybackState] = useState<AudioPlaybackState>('idle');
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const currentAudioKeyRef = useRef<string | null>(null);
+
+  // Recording audio state (STT)
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -68,6 +75,98 @@ export function ConversationPage() {
 
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const textInputRef = useRef<HTMLInputElement>(null);
+
+  // Play synthesized speech audio for an AI utterance (with local caching)
+  const playAiUtterance = useCallback(
+    async (text: string, id?: string, isUserClick = false) => {
+      const trimmed = text?.trim();
+      if (!trimmed) return;
+
+      const cacheKey = id || trimmed;
+
+      // If user clicked while currently playing the same utterance, pause/stop it
+      if (
+        isUserClick &&
+        audioPlaybackState === 'playing' &&
+        currentAudioKeyRef.current === cacheKey &&
+        audioElementRef.current
+      ) {
+        audioElementRef.current.pause();
+        setAudioPlaybackState('paused');
+        return;
+      }
+
+      // If user clicked while paused on the same utterance, resume playback
+      if (
+        isUserClick &&
+        audioPlaybackState === 'paused' &&
+        currentAudioKeyRef.current === cacheKey &&
+        audioElementRef.current &&
+        audioElementRef.current.src
+      ) {
+        try {
+          await audioElementRef.current.play();
+          setAudioPlaybackState('playing');
+          return;
+        } catch {
+          // If play failed, continue to reload audio below
+        }
+      }
+
+      // If playing any audio, pause it before loading/playing new speech
+      if (audioElementRef.current) {
+        audioElementRef.current.pause();
+      }
+
+      // Check session in-memory audio cache
+      let audioUrl = audioCacheRef.current.get(cacheKey);
+
+      if (!audioUrl) {
+        setAudioPlaybackState('loading_audio');
+        const res = await api.synthesizeSpeech(trimmed);
+
+        if (res.data) {
+          audioUrl = URL.createObjectURL(res.data);
+          audioCacheRef.current.set(cacheKey, audioUrl);
+        } else {
+          setAudioPlaybackState('error');
+          if (isUserClick) {
+            setStatusMessage(res.error || 'Local Piper speech synthesis is currently unavailable.');
+          }
+          return;
+        }
+      }
+
+      if (!audioElementRef.current) {
+        audioElementRef.current = new Audio();
+      }
+
+      const audio = audioElementRef.current;
+      currentAudioKeyRef.current = cacheKey;
+      audio.src = audioUrl;
+
+      audio.onplay = () => setAudioPlaybackState('playing');
+      audio.onpause = () => {
+        if (audio.currentTime < audio.duration) {
+          setAudioPlaybackState('paused');
+        }
+      };
+      audio.onended = () => setAudioPlaybackState('idle');
+      audio.onerror = () => setAudioPlaybackState('idle');
+
+      try {
+        await audio.play();
+      } catch (err: unknown) {
+        // Autoplay policy or playback constraint
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+          setAudioPlaybackState('idle');
+        } else {
+          setAudioPlaybackState('error');
+        }
+      }
+    },
+    [audioPlaybackState],
+  );
 
   // Initialize or load real conversation session
   const initSession = useCallback(async () => {
@@ -96,13 +195,14 @@ export function ConversationPage() {
           setMessages(loadedMessages);
         } else {
           // New session without prior utterances: welcome with mode starter prompt
+          const starterText =
+            currentMode.starterPrompt ||
+            "Hello! It's great to speak with you today. What would you like to talk about?";
           setMessages([
             {
               id: `starter-${Date.now()}`,
               speaker: 'ai',
-              text:
-                currentMode.starterPrompt ||
-                "Hello! It's great to speak with you today. What would you like to talk about?",
+              text: starterText,
               timestamp: new Date().toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -129,13 +229,14 @@ export function ConversationPage() {
       });
 
       // Opening greeting tailored to selected mode
+      const starterText =
+        currentMode.starterPrompt ||
+        "Hello! It's great to speak with you today. What would you like to talk about?";
       setMessages([
         {
           id: `starter-${Date.now()}`,
           speaker: 'ai',
-          text:
-            currentMode.starterPrompt ||
-            "Hello! It's great to speak with you today. What would you like to talk about?",
+          text: starterText,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
@@ -161,13 +262,20 @@ export function ConversationPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Clean up any active recording on unmount
+  // Clean up any active recording and audio cache on unmount
   useEffect(() => {
+    const audioCache = audioCacheRef.current;
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       }
+      if (audioElementRef.current) {
+        audioElementRef.current.pause();
+        audioElementRef.current = null;
+      }
+      audioCache.forEach((url) => URL.revokeObjectURL(url));
+      audioCache.clear();
     };
   }, []);
 
@@ -217,6 +325,9 @@ export function ConversationPage() {
 
       setMessages((prev) => [...prev, aiUtterance]);
       setFlowState('ai_speaking');
+
+      // Request speech synthesis (TTS) in the background without blocking text appearance
+      playAiUtterance(aiReply.transcript, aiReply.id, false);
 
       // Natural cadence: speak for 3-4.5s then return to idle
       const readDuration = Math.min(Math.max(aiReply.transcript.length * 35, 2500), 4500);
@@ -361,6 +472,10 @@ export function ConversationPage() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
+    // Stop any audio playback
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+    }
 
     const sessionId = activeSession?.id || routeSessionId;
     if (sessionId && sessionId !== 'new') {
@@ -372,6 +487,12 @@ export function ConversationPage() {
   };
 
   const latestAiMessage = [...messages].reverse().find((m) => m.speaker === 'ai');
+
+  // Handle clicking the speaker button (play/stop/resume Piper audio)
+  const handleSpeakerButtonClick = () => {
+    if (!latestAiMessage?.text) return;
+    playAiUtterance(latestAiMessage.text, latestAiMessage.id, true);
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] max-w-3xl mx-auto animate-in fade-in duration-300">
@@ -502,7 +623,9 @@ export function ConversationPage() {
             ) : flowState === 'ai_speaking' ? (
               <div className="flex items-center gap-2 text-xs font-medium text-sky-300">
                 <Waveform isActive={true} color="blue" barsCount={5} size="sm" />
-                <span>The Friend is speaking</span>
+                <span>
+                  The Friend is speaking {audioPlaybackState === 'playing' ? '(audio active)' : ''}
+                </span>
               </div>
             ) : (
               <span className="text-xs text-zinc-400">
@@ -577,7 +700,7 @@ export function ConversationPage() {
         )}
       </div>
 
-      {/* Turn or Transcription Error State with Retry Button */}
+      {/* Turn, Transcription, or Synthesis Error State with Retry Button */}
       {turnError && (
         <div className="mb-3 p-3 rounded-2xl bg-rose-950/40 border border-rose-800/50 flex items-center justify-between gap-3 text-xs text-rose-200 animate-in fade-in duration-200">
           <div className="flex items-center gap-2 overflow-hidden">
@@ -607,15 +730,46 @@ export function ConversationPage() {
       {/* Bottom Voice & Text Controls */}
       <div className="pt-1 flex flex-col items-center gap-3">
         <div className="flex items-center justify-center gap-6 w-full">
-          {/* Mute button */}
+          {/* Functional Speaker Audio Button (TTS Playback & Control) */}
           <button
             type="button"
-            onClick={() => setIsMuted((prev) => !prev)}
-            className="p-3 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-            aria-label={isMuted ? 'Unmute voice' : 'Mute voice'}
-            title={isMuted ? 'Unmute voice' : 'Mute voice'}
+            onClick={handleSpeakerButtonClick}
+            disabled={!latestAiMessage?.text}
+            className={`p-3 rounded-full border transition-all cursor-pointer ${
+              audioPlaybackState === 'playing'
+                ? 'bg-amber-400/20 border-amber-400/60 text-amber-300 ring-2 ring-amber-400/30'
+                : audioPlaybackState === 'loading_audio'
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-300 animate-pulse'
+                  : audioPlaybackState === 'paused'
+                    ? 'bg-zinc-900 border-zinc-700 text-amber-200 hover:text-amber-100'
+                    : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
+            }`}
+            aria-label={
+              audioPlaybackState === 'playing'
+                ? 'Stop Friend voice'
+                : audioPlaybackState === 'paused'
+                  ? 'Resume Friend voice'
+                  : 'Play Friend voice with Piper'
+            }
+            title={
+              audioPlaybackState === 'playing'
+                ? 'Stop audio playback'
+                : audioPlaybackState === 'loading_audio'
+                  ? 'Synthesizing voice with Piper...'
+                  : audioPlaybackState === 'paused'
+                    ? 'Resume audio playback'
+                    : 'Listen to The Friend (Piper TTS)'
+            }
           >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {audioPlaybackState === 'loading_audio' ? (
+              <span className="w-4 h-4 border-2 border-zinc-300 border-t-transparent rounded-full animate-spin" />
+            ) : audioPlaybackState === 'playing' ? (
+              <Square className="w-4 h-4 fill-current" />
+            ) : audioPlaybackState === 'paused' ? (
+              <Play className="w-4 h-4 fill-current" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
           </button>
 
           {/* PRIMARY MIC BUTTON (Human Companion Centerpiece) */}
@@ -708,7 +862,9 @@ export function ConversationPage() {
                 ? 'Check your words above. You can edit them before sending.'
                 : flowState === 'ai_thinking'
                   ? 'The Friend is processing your message...'
-                  : 'Tap the mic to speak or type above. Practice at your natural pace.'}
+                  : audioPlaybackState === 'playing'
+                    ? 'The Friend is speaking aloud... Tap speaker icon to pause.'
+                    : 'Tap the mic to speak or type above. Practice at your natural pace.'}
         </div>
       </div>
     </div>

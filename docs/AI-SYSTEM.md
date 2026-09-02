@@ -114,9 +114,35 @@ To maintain zero API cost and guarantee total user privacy, the architecture use
 
 ### 3.3 Text-to-Speech (TTS) via Piper
 
-- **Runtime**: Local [Piper](https://github.com/rhasspy/piper).
-- **Attributes**: Fast neural speech synthesis capable of generating natural voice audio in real time on standard consumer CPUs without requiring discrete GPU acceleration.
-- **Voices**: Curated warm, clear, and natural English voices (US/UK accents).
+- **Runtime**: Local [Piper](https://github.com/rhasspy/piper) neural text-to-speech HTTP server.
+- **Provider Abstraction**: Implemented via `TextToSpeechProvider` interface with a provider factory (`createTextToSpeechProvider`).
+  - **`PiperTextToSpeechProvider`**: Connects to local Piper HTTP instance (`POST /` or `GET /?text=...`) returning standard WAV audio streams with timeout enforcement and clean error mapping.
+  - **`MockTextToSpeechProvider`**: Deterministic offline mock generating valid RIFF/WAVE PCM audio for automated CI testing and offline development.
+- **API Endpoint**: `POST /api/tts/synthesize` accepting `{ "text": "..." }` and streaming binary WAV audio (`Content-Type: audio/wav`).
+- **Configuration Parameters**:
+  - `TTS_PROVIDER`: `piper` or `mock`
+  - `PIPER_BASE_URL`: Base HTTP URL (default: `http://localhost:5001`)
+  - `PIPER_MODEL`: Target voice model (default: `en_US-lessac-medium`, configurable)
+  - `PIPER_TIMEOUT_MS`: Inference timeout in ms (default: `30000`)
+- **Frontend Playback & Caching**:
+  - Conversational responses from Ollama trigger background speech synthesis.
+  - In-memory `audioCacheRef` caches object URLs per utterance within the active browser session, preventing redundant synthesis when the user replays or pauses audio.
+  - The speaker button toggles play/stop/resume seamlessly.
+  - Autoplay restrictions or Piper unavailability do not block or interrupt the text conversation.
+- **Recommended Local Piper Setup (When User is Ready)**:
+  - **Option A (Python Piper HTTP Server)**:
+    ```bash
+    # Install piper-tts via pip
+    pip install piper-tts
+
+    # Download voice model and start the HTTP server on port 5001
+    python3 -m piper.http_server --model en_US-lessac-medium --port 5001
+    ```
+  - **Option B (Wyoming Piper Docker / Microservice)**:
+    ```bash
+    docker run -it -p 5001:5000 rhasspy/wyoming-piper --voice en_US-lessac-medium
+    ```
+- **Privacy & Storage**: Synthesized audio is streamed directly to the browser and held temporarily in memory. No audio files are written to disk or PostgreSQL.
 
 ### 3.4 Future Research: Browser-Native / Hybrid Models
 

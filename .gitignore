@@ -43,3 +43,10 @@ postgres_data/
 tmp/
 temp/
 coverage/
+
+# Python virtualenvs & local models
+.venv*/
+venv*/
+*.onnx*
+*.bin
+*.pt

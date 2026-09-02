@@ -4,9 +4,11 @@ import { config } from './config/env.js';
 import { checkDatabaseConnection, closeDatabasePool } from './db/pool.js';
 import { createSessionRouter } from './routes/session.routes.js';
 import { createSttRouter } from './routes/stt.routes.js';
+import { createTtsRouter } from './routes/tts.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { OllamaConversationProvider } from './ai/ollama-conversation.provider.js';
 import { createSpeechToTextProvider } from './stt/stt-factory.js';
+import { createTextToSpeechProvider } from './tts/tts-factory.js';
 
 const app = express();
 
@@ -19,7 +21,7 @@ app.use(
 );
 app.use(express.json());
 
-// Health Check Endpoint (Includes DB, AI Provider, and STT status)
+// Health Check Endpoint (Includes DB, AI Provider, STT, and TTS status)
 app.get('/api/health', async (_req: Request, res: Response) => {
   const dbHealth = await checkDatabaseConnection();
 
@@ -58,12 +60,22 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     ...(sttStatus.error ? { error: sttStatus.error } : {}),
   };
 
+  // Text-to-Speech provider health
+  const ttsProvider = createTextToSpeechProvider();
+  const ttsStatus = await ttsProvider.checkHealth();
+  const ttsHealth = {
+    provider: ttsProvider.providerName,
+    model: ttsStatus.model || config.tts.piper.model,
+    status: ttsStatus.available ? 'connected' : 'unavailable',
+    ...(ttsStatus.error ? { error: ttsStatus.error } : {}),
+  };
+
   const isHealthy = dbHealth.connected;
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? 'ok' : 'degraded',
     service: 'ai-english-coach-server',
     timestamp: new Date().toISOString(),
-    phase: 'whisper-stt-integration',
+    phase: 'piper-tts-integration',
     database: {
       status: dbHealth.connected ? 'connected' : 'disconnected',
       latencyMs: dbHealth.latencyMs,
@@ -71,6 +83,7 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     },
     ai: aiHealth,
     stt: sttHealth,
+    tts: ttsHealth,
   });
 });
 
@@ -80,6 +93,9 @@ app.use('/api/sessions', createSessionRouter());
 // Speech-to-Text (STT) API
 app.use('/api/stt', createSttRouter());
 
+// Text-to-Speech (TTS) API
+app.use('/api/tts', createTtsRouter());
+
 // Centralized Error Handling Middleware
 app.use(errorHandler);
 
@@ -88,6 +104,7 @@ const server = app.listen(config.port, () => {
   console.log(`[server]: AI English Coach backend running on port ${config.port}`);
   console.log(`[server]: Configured AI provider: '${config.ai.provider}'`);
   console.log(`[server]: Configured STT provider: '${config.stt.provider}'`);
+  console.log(`[server]: Configured TTS provider: '${config.tts.provider}'`);
 });
 
 // Graceful Shutdown

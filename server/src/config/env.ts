@@ -41,6 +41,14 @@ export const config = {
       timeoutMs: parseInt(process.env.WHISPER_TIMEOUT_MS || '30000', 10),
     },
   },
+  tts: {
+    provider: (process.env.TTS_PROVIDER || 'piper') as 'piper' | 'mock',
+    piper: {
+      baseUrl: process.env.PIPER_BASE_URL || 'http://localhost:5001',
+      model: process.env.PIPER_MODEL || 'en_US-lessac-medium',
+      timeoutMs: parseInt(process.env.PIPER_TIMEOUT_MS || '30000', 10),
+    },
+  },
   devUser: {
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Sanjana',

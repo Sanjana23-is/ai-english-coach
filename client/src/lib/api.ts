@@ -219,4 +219,52 @@ export const api = {
       return { data: null, error: `Could not connect to speech-to-text service (${msg})` };
     }
   },
+
+  /**
+   * Synthesize text into playable speech audio (WAV) via local Piper
+   */
+  async synthesizeSpeech(text: string): Promise<ApiResponse<Blob>> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tts/synthesize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'audio/wav, audio/*',
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!res.ok) {
+        let errorMsg = `Speech synthesis failed (${res.status})`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.error?.message) {
+            errorMsg = errJson.error.message;
+          }
+        } catch {
+          // fallback
+        }
+        return { data: null, error: errorMsg };
+      }
+
+      // Verify that the response Content-Type is actually audio before treating it as a playable blob
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('audio/')) {
+        return {
+          data: null,
+          error: `Received non-audio response (${contentType || 'unknown'}) from speech service`,
+        };
+      }
+
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        return { data: null, error: 'Received empty audio from speech service' };
+      }
+
+      return { data: blob, error: undefined };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error';
+      return { data: null, error: `Could not connect to speech synthesis service (${msg})` };
+    }
+  },
 };
